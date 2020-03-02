@@ -101,7 +101,7 @@ def dqn_update(batch_size,
     
     state      = torch.FloatTensor(state)
     state_plus_1 = torch.FloatTensor(state_plus_1)
-    action     = torch.LongTensor(np.reshape(action, (BATCH_SIZE, 1)))
+    action     = torch.LongTensor(np.reshape(action, (batch_size, 1)))
     reward     = torch.FloatTensor(reward).unsqueeze(1)
     
     predicted_q_value = dqn_net.forward(state)
@@ -109,11 +109,6 @@ def dqn_update(batch_size,
     q_value_plus_1_target = dqn_target_net.forward(state_plus_1).detach()
     max_q_value_plus_1_target = q_value_plus_1_target.max(1)[0].unsqueeze(1)
     expected_q_value = reward + gamma*max_q_value_plus_1_target
-    
-    #print('predicted_q_value', predicted_q_value)
-    #print('predicted_q_value_1', predicted_q_value.shape)
-    #print('expected_q_value', expected_q_value)
-    #print('expected_q_value', expected_q_value)
     
     loss = loss_function(predicted_q_value, expected_q_value)
     
@@ -143,4 +138,24 @@ def ucb_exploration(action, episode):
     '''
     print('ucb', c_constant*np.sqrt(np.log(episode + 0.1)/(number_times_action_selected + 0.1)))
     return np.argmax(action + c_constant*np.sqrt(np.log(episode + 0.1)/(number_times_action_selected + 0.1)))
+
+
+#---Define parameters of the network---#
+action_dim = 5
+state_dim = 26
+hidden_dim = 300
+action_w_max = 2. #-rad/s-#
+
+def choose_w_action_velocity(action, w_max=action_w_max, a_dim=action_dim):
+    '''
+        Function that chooses the angular(w) to the turtlebot3 given the action dimension
+
+        param:
+            action: action choosed by the network
+            w_max: maximum angular velocity of the robot
+            a_dim: the number of discritized actions of the agent
+
+        return: velocity of the robot in rad/s 
+    '''
+    return w_max*(action/((a_dim-1.)/2.) - 1.)
 
