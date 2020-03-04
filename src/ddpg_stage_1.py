@@ -316,7 +316,7 @@ if __name__ == '__main__':
             #action[1] = np.clip(np.random.normal(action[1], var_w), -ACTION_W_MAX, ACTION_W_MAX)
             #print('actionD', action)
 
-            if is_training and (ep)% 2 == 0 or not ram.len >= 2*MAX_STEPS:
+            if is_training and (ep)% 2 == 0 and ram.len >= 2*MAX_STEPS:
                 #if ep%2 == 0:
                 #    action = trainer.get_exploitation_action(state)
                 #    #print('aa', action)
@@ -329,7 +329,7 @@ if __name__ == '__main__':
                 #action[1] = np.clip(action[1], -ACTION_W_MAX, ACTION_W_MAX)
             #print('af', action) 
             else:
-                # print('\n\n Explotation \n\n')
+                print('\n\n Explotation \n\n')
                 action = trainer.get_exploitation_action(state)
 
             #exploration_rate_threshold = random.uniform(0., 1.)

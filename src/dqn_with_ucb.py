@@ -18,13 +18,15 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from collections import deque
 from std_msgs.msg import Float32
-from environment_stage_1 import Env
+from environment_stage import Env
 import torch
 import torch.nn.functional as F
+import torch.optim as optim
 import gc
 import torch.nn as nn
 import math
 from collections import deque
+import copy
 
 #---Directory Path---#
 dirPath = os.path.dirname(os.path.realpath(__file__))
@@ -97,6 +99,14 @@ loss_function = nn.MSELoss()
 def dqn_update(batch_size,
                  gamma=0.99,
                  tau=0.001):
+    '''
+        Function that updates the DQN
+
+        param:
+            batch_size: size of the buffer of memory
+            gamma: discont value of gamma
+            tau: value to make the soft-update of the DQN target
+    '''
     state, action, reward, state_plus_1 = replay_buffer.pull_from_memory(batch_size)
     
     state      = torch.FloatTensor(state)
@@ -121,6 +131,17 @@ def dqn_update(batch_size,
             target_param.data * (1.0 - tau) + param.data * tau
         )   
 
+#---Define parameters of the network---#
+action_dimension = 5
+state_dimension = 26
+hidden_dimension = 300
+action_w_max = 2. #-rad/s-#
+action_v_constant = 1.5 #-m/s-#
+learning_rate = 0.001
+replay_memory_size = 20000
+world = 'stage_1'
+batch_size  = 128
+
 #---Implementation of the UCB---#
 #-Constant of UCB exploration system-#
 c_constant = 2
@@ -139,14 +160,22 @@ def ucb_exploration(action, episode):
     print('ucb', c_constant*np.sqrt(np.log(episode + 0.1)/(number_times_action_selected + 0.1)))
     return np.argmax(action + c_constant*np.sqrt(np.log(episode + 0.1)/(number_times_action_selected + 0.1)))
 
+#---Objects of the DQN and target_network---#
+dqn_net = DQN(state_dim=state_dimension, hidden_dim=hidden_dimension, action_dim=action_dimension)
+dqn_target_net = DQN(state_dim=state_dimension, hidden_dim=hidden_dimension, action_dim=action_dimension)
 
-#---Define parameters of the network---#
-action_dim = 5
-state_dim = 26
-hidden_dim = 300
-action_w_max = 2. #-rad/s-#
+#---Copying the parameters of dqn and dqn_target_network---#
+for target_param, param in zip(dqn_target_net.parameters(), dqn_net.parameters()):
+    target_param.data.copy_(param.data)
 
-def choose_w_action_velocity(action, w_max=action_w_max, a_dim=action_dim):
+#---defining the optimizer of the network---#
+dqn_optimizer  = optim.Adam(dqn_net.parameters(), lr=learning_rate)
+
+#---inicializing the replay memory---#
+replay_buffer = ReplayMemory(replay_memory_size)
+
+#---function that chooses the angular velicity of the turtlebot---#
+def choose_w_action_velocity(action, w_max=action_w_max, a_dim=action_dimension):
     '''
         Function that chooses the angular(w) to the turtlebot3 given the action dimension
 
@@ -159,3 +188,125 @@ def choose_w_action_velocity(action, w_max=action_w_max, a_dim=action_dim):
     '''
     return w_max*(action/((a_dim-1.)/2.) - 1.)
 
+#---Save function of the network---#
+def save_models(episode_count):
+    '''
+        Saves the models the DQN
+
+        param:
+            episode_count: episode taht will save
+    '''
+    torch.save(dqn_net.state_dict(), dirPath + '/models/' + world + '/'+str(episode_count)+ '_policy_net.pth')
+    torch.save(dqn_target_net.state_dict(), dirPath + '/models/' + world + '/'+str(episode_count)+ 'value_net.pth')
+    print("====================================")
+    print("Model has been saved...")
+    print("====================================")
+
+#---Load function of the network---#
+def load_models(episode):
+    '''
+        Loads the model of the DQN
+
+        param:
+            episode: loads the episode that were saved
+    '''
+    dqn_net.load_state_dict(torch.load(dirPath + '/models/' + world + '/'+str(episode)+ '_policy_net.pth'))
+    dqn_target_net.load_state_dict(torch.load(dirPath + '/models/' + world + '/'+str(episode)+ 'value_net.pth'))
+    print('***Models load***')
+
+#---True if it is training and False if it is testing---#
+is_training = True
+
+ucb_exploration_use = False
+
+#---loads episodes for the network parameters---#
+'''
+    (comment line if it is not using)
+'''
+# load_models(360)
+
+#---parameters of the training---#
+max_episodes  = 10001
+max_steps   = 500
+rewards     = []
+exploration_rate = 1
+max_exploration_rate = 1
+min_exploration_rate = 0.1
+exploration_decay_rate = 0.02
+
+#---
+print('State Dimensions: ' + str(state_dimension))
+print('Action Dimensions: ' + str(action_dimension))
+print('Action: constant linear velocity ' + str(1.5) + ' m/s and maximum angular velocity ' + str(action_w_max) + ' rad/s')
+
+#---starts node and training---#
+if __name__ == '__main__':
+    rospy.init_node('dqn_node')
+    pub_result = rospy.Publisher('result', Float32, queue_size=5)
+    result = Float32()
+    env = Env()
+    how_memory_before_training = 2
+
+    for ep in range(max_episodes):
+        done = False
+        state = env.reset()
+        if is_training and ep%2 == 0 and len(replay_buffer) > how_memory_before_training*batch_size:
+            print('Episode ' + str(ep) + ' training')
+        else:
+            print('Episode ' + str(ep) + ' evaluating')
+
+        rewards_current_episode = 0.
+
+        for step in range(max_steps):
+            state = np.float32(state)
+            # print('state', state[-2:])
+            action = dqn_net.forward(state)
+
+            if is_training and ep%2 == 0 and len(replay_buffer) > how_memory_before_training*batch_size:
+                # print('exploring')
+                if not ucb_exploration_use:
+                    exploration_rate_threshold = random.uniform(0,1)
+                    if exploration_rate_threshold > exploration_rate:
+                        action = np.argmax(action.detach().numpy())
+                    else:
+                        action = random.randrange(action_dimension)
+                else:
+                    action = ucb_exploration(action.detach().numpy(), ep)
+                    number_times_action_selected[action] += 1
+            else:
+                # print(('evaluating {}').format(len(replay_buffer)))
+                action = np.argmax(action.detach().numpy())
+
+            state_plus_1, reward, done = env.step(choose_w_action_velocity(action))
+            # print('action', action,'r',reward)
+
+            if ep%2 == 0 or not len(replay_buffer) > how_memory_before_training*batch_size:
+                if reward == 100:
+                    print('***\n-------- Maximum Reward ----------\n****')
+                    for _ in range(3):
+                        replay_buffer.push_to_memory(state, action, reward, state_plus_1)
+                else:
+                    replay_buffer.push_to_memory(state, action, reward, state_plus_1)
+
+            if len(replay_buffer) > how_memory_before_training*batch_size and is_training and ep%2 == 0:
+                dqn_update(batch_size)
+
+            rewards_current_episode += reward
+            state_plus_1 = np.float32(state_plus_1)
+            state = copy.deepcopy(state_plus_1)
+
+            if done:
+                break
+
+        print('Reward per ep: ' + str(rewards_current_episode))
+        
+        rewards.append(rewards_current_episode)
+        if len(replay_buffer) > how_memory_before_training*batch_size and not ep%2 == 0:
+            result = rewards_current_episode
+            pub_result.publish(result)
+        if ep%2 == 0:
+            exploration_rate = (min_exploration_rate +
+                    (max_exploration_rate - min_exploration_rate)* np.exp(-exploration_decay_rate*ep))
+        print('Exploration rate: ' + str(exploration_rate))
+        if ep%20 == 0:
+            save_models(ep)

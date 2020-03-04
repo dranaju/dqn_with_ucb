@@ -1,7 +1,7 @@
 <launch>
   <arg name="stage" default="3"/>
   <param name="stage_number"  value="$(arg stage)"/>
-  <node pkg="project" type="ddpg_stage_1.py" name="ddpg_stage_1" output="screen" />
-  <node pkg="project"  type="moving_obstacle.py" name="moving_obstacle" output="screen" />
+  <node pkg="dqn_with_ucb" type="dqn_with_ucb.py" name="dqn_node" output="screen" />
+  <node pkg="dqn_with_ucb"  type="moving_obstacle.py" name="moving_obstacle" output="screen" />
 </launch>
 
