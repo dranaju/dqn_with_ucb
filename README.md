@@ -52,3 +52,5 @@ In another terminal run:
 ```
 roslaunch dqn_with_ucb dqn_stage_{number_of_stage}.launch
 ```
+
+If you want to use the UCB exploration system change the variable  ``` ucb_exploration_use ``` for **True** and epsilon greedy if **False**.
