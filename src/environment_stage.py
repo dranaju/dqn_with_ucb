@@ -151,7 +151,8 @@ class Env():
                 self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True, running=True)
                 if target_not_movable:
                     self.reset()
-            self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True)
+            else:
+                self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True)
             self.goal_distance = self.getGoalDistance()
             self.get_goalbox = False
 
